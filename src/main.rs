@@ -83,9 +83,9 @@ async fn main() {
         let right_pressed = is_key_down(KeyCode::Right);
         let left_pressed = is_key_down(KeyCode::Left);
         let signum = if right_pressed {
-            -1.0
-        } else if left_pressed {
             1.0
+        } else if left_pressed {
+            -1.0
         } else {
             0.0
         };
@@ -100,7 +100,7 @@ async fn main() {
 
         let step = FOV / screen_width();
         for point in 0..screen_width() as usize {
-            let step_rad = (player.angle + step * point as f32).rem_euclid(2.0 * PI);
+            let step_rad = (-screen_width() / 2.0 + player.angle + step * point as f32).rem_euclid(2.0 * PI);
             let quadrant = match step_rad {
                 angle if angle >= 0.0 && angle < PI / 2.0 => 1,
                 angle if angle > PI / 2.0 && angle < PI => 2,
