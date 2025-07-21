@@ -1,10 +1,5 @@
-use ::rand::{Rng, SeedableRng, rngs::StdRng, seq::IndexedRandom};
+use ::rand::{Rng, SeedableRng, rngs::StdRng};
 use macroquad::prelude::*;
-use parry2d::{
-    math::{Isometry, Point, Vector},
-    query::{Ray, RayCast, contact},
-    shape::{Ball, Compound, Cuboid, SharedShape},
-};
 use std::f32::consts::PI;
 
 const ROWS: usize = 15;
@@ -15,7 +10,6 @@ const TILE_CHANCE: f32 = 0.1;
 const ANGLE_STEP: f32 = 0.05;
 const PLAYER_RADIUS: f32 = 5.0;
 const PLAYER_STEP: f32 = 5.0;
-const HEIGHT: f32 = 15.0;
 static FIELD: Rect = Rect::new(
     0.0,
     0.0,
@@ -47,9 +41,9 @@ async fn main() {
     let mut rng = StdRng::from_os_rng();
 
     let mut map = [[false; COLUMNS]; ROWS];
-    for row in 0..ROWS {
-        for column in 0..COLUMNS {
-            map[row][column] = rng.random_range(0.0..=1.0) <= TILE_CHANCE;
+    for row in &mut map {
+        for tile in row {
+            *tile = rng.random_range(0.0..=1.0) <= TILE_CHANCE;
         }
     }
 
@@ -100,13 +94,14 @@ async fn main() {
 
         let step = FOV / screen_width();
         for point in 0..screen_width() as usize {
-            let step_rad = (-screen_width() / 2.0 + player.angle + step * point as f32).rem_euclid(2.0 * PI);
-            let quadrant = match step_rad {
-                angle if angle >= 0.0 && angle < PI / 2.0 => 1,
-                angle if angle > PI / 2.0 && angle < PI => 2,
-                angle if angle > PI && angle < 3.0 / 2.0 * PI => 3,
-                angle if angle > 3.0 / 2.0 * PI && angle < 2.0 * PI => 4,
-                _ => unreachable!(),
+            let alpha =
+                2.0 * PI - (-FOV / 2.0 + player.angle + step * point as f32).rem_euclid(2.0 * PI);
+            let quadrant = match alpha {
+                angle if (0.0..PI / 2.0).contains(&angle) => 1,
+                angle if (PI / 2.0..PI).contains(&angle) => 2,
+                angle if (PI..3.0 / 2.0 * PI).contains(&angle) => 3,
+                angle if (3.0 / 2.0 * PI..=2.0 * PI).contains(&angle) => 4,
+                _ => continue,
             };
 
             let mut ray_pos_v = player.pos;
@@ -119,7 +114,7 @@ async fn main() {
                         player.pos.y - ((player.pos.y / TILE_SIZE).floor()) as f32 * TILE_SIZE,
                     );
 
-                    let b = -step_rad.tan() * path_left.x;
+                    let b = -alpha.tan() * path_left.x;
                     ray_pos_v += vec2(path_left.x + 1.0, b);
 
                     loop {
@@ -130,10 +125,10 @@ async fn main() {
                             break;
                         }
 
-                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -step_rad.tan());
+                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -alpha.tan());
                     }
 
-                    let b = path_left.y / step_rad.tan();
+                    let b = path_left.y / alpha.tan();
                     ray_pos_h += vec2(b, -path_left.y - 1.0);
 
                     loop {
@@ -144,24 +139,23 @@ async fn main() {
                         {
                             if pos_beyond_field {
                                 let extra_y = FIELD.y - ray_pos_h.y;
-                                let extra_x = extra_y / -step_rad.tan();
+                                let extra_x = extra_y / -alpha.tan();
                                 ray_pos_h += vec2(extra_x, extra_y);
                             }
 
                             break;
                         }
 
-                        ray_pos_h += vec2(TILE_SIZE / step_rad.tan(), -TILE_SIZE);
+                        ray_pos_h += vec2(TILE_SIZE / alpha.tan(), -TILE_SIZE);
                     }
                 }
                 2 => {
-                    let step_rad = step_rad - PI;
                     let path_left = vec2(
                         ((player.pos.x / TILE_SIZE).floor()) as f32 * TILE_SIZE - player.pos.x,
                         player.pos.y - ((player.pos.y / TILE_SIZE).floor()) as f32 * TILE_SIZE,
                     );
 
-                    let b = -step_rad.tan() * path_left.x;
+                    let b = -alpha.tan() * path_left.x;
                     ray_pos_v += vec2(path_left.x - 1.0, b);
 
                     loop {
@@ -172,17 +166,17 @@ async fn main() {
                         {
                             if pos_beyond_field {
                                 let extra_x = FIELD.x - ray_pos_v.x;
-                                let extra_y = extra_x * -step_rad.tan();
+                                let extra_y = extra_x * -alpha.tan();
 
                                 ray_pos_v += vec2(extra_x, extra_y);
                             }
                             break;
                         }
 
-                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * step_rad.tan());
+                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * alpha.tan());
                     }
 
-                    let b = path_left.y / step_rad.tan();
+                    let b = path_left.y / alpha.tan();
                     ray_pos_h += vec2(b, -path_left.y - 1.0);
 
                     loop {
@@ -193,23 +187,23 @@ async fn main() {
                         {
                             if pos_beyond_field {
                                 let extra_y = FIELD.y - ray_pos_h.y;
-                                let extra_x = extra_y / -step_rad.tan();
+                                let extra_x = extra_y / -alpha.tan();
                                 ray_pos_h += vec2(extra_x, extra_y);
                             }
                             break;
                         }
 
-                        ray_pos_h += vec2(TILE_SIZE / step_rad.tan(), -TILE_SIZE);
+                        ray_pos_h += vec2(TILE_SIZE / alpha.tan(), -TILE_SIZE);
                     }
                 }
                 3 => {
-                    let step_rad = step_rad - PI;
+                    let alpha = alpha - PI;
                     let path_left = vec2(
                         ((player.pos.x / TILE_SIZE).floor()) as f32 * TILE_SIZE - player.pos.x,
                         ((player.pos.y / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.y,
                     );
 
-                    let b = -step_rad.tan() * path_left.x;
+                    let b = -alpha.tan() * path_left.x;
                     ray_pos_v += vec2(path_left.x - 1.0, b);
 
                     loop {
@@ -220,17 +214,17 @@ async fn main() {
                         {
                             if pos_beyond_field {
                                 let extra_x = FIELD.x - ray_pos_v.x;
-                                let extra_y = extra_x * -step_rad.tan();
+                                let extra_y = extra_x * -alpha.tan();
                                 ray_pos_v += vec2(extra_x, extra_y);
                             }
 
                             break;
                         }
 
-                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * step_rad.tan());
+                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * alpha.tan());
                     }
 
-                    let b = path_left.y / -step_rad.tan();
+                    let b = path_left.y / -alpha.tan();
                     ray_pos_h += vec2(b, path_left.y);
 
                     loop {
@@ -241,13 +235,13 @@ async fn main() {
                         {
                             if pos_beyond_field {
                                 let extra_y = ray_pos_h.y - FIELD.h;
-                                let extra_x = extra_y / step_rad.tan();
+                                let extra_x = extra_y / alpha.tan();
                                 ray_pos_h += vec2(extra_x, -extra_y);
                             }
                             break;
                         }
 
-                        ray_pos_h += vec2(TILE_SIZE / -step_rad.tan(), TILE_SIZE);
+                        ray_pos_h += vec2(TILE_SIZE / -alpha.tan(), TILE_SIZE);
                     }
                 }
                 4 => {
@@ -256,7 +250,7 @@ async fn main() {
                         ((player.pos.y / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.y,
                     );
 
-                    let b = -step_rad.tan() * path_left.x;
+                    let b = -alpha.tan() * path_left.x;
                     ray_pos_v += vec2(path_left.x, b);
 
                     loop {
@@ -268,10 +262,10 @@ async fn main() {
                             break;
                         }
 
-                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -step_rad.tan());
+                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -alpha.tan());
                     }
 
-                    let b = path_left.y / -step_rad.tan();
+                    let b = path_left.y / -alpha.tan();
                     ray_pos_h += vec2(b, path_left.y);
 
                     loop {
@@ -282,7 +276,7 @@ async fn main() {
                             break;
                         }
 
-                        ray_pos_h += vec2(TILE_SIZE / -step_rad.tan(), TILE_SIZE);
+                        ray_pos_h += vec2(TILE_SIZE / -alpha.tan(), TILE_SIZE);
                     }
                 }
                 _ => unreachable!(),
@@ -313,9 +307,18 @@ async fn main() {
                 point as f32,
                 screen_height() / 2.0 - line_h / 2.0,
                 1.0,
-                if horizontal { GREEN } else { DARKGREEN },
+                if horizontal { DARKGREEN } else { GREEN },
             );
         }
+
+        // draw_line(
+        //     player.pos.x,
+        //     player.pos.y,
+        //     player.pos.x + player.angle.cos() * 50.0,
+        //     player.pos.y + player.angle.sin() * 50.0,
+        //     5.0,
+        //     YELLOW,
+        // );
 
         // for row in 0..ROWS {
         //     for column in 0..COLUMNS {
@@ -331,7 +334,7 @@ async fn main() {
         //         }
         //     }
         // }
-
+        //
         // draw_rectangle_lines(FIELD.x, FIELD.y, FIELD.w, FIELD.h, 5.0, WHITE);
 
         next_frame().await;
