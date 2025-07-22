@@ -7,9 +7,9 @@ const COLUMNS: usize = 20;
 const TILE_SIZE: f32 = 64.0;
 
 const TILE_CHANCE: f32 = 0.1;
-const ANGLE_STEP: f32 = 0.05;
-const PLAYER_RADIUS: f32 = 5.0;
 const PLAYER_STEP: f32 = 5.0;
+const MOUSE_SENSITIVITY: f32 = 0.0008;
+const VISIBILITY: f32 = 1500.0;
 static FIELD: Rect = Rect::new(
     0.0,
     0.0,
@@ -57,40 +57,52 @@ async fn main() {
         angle: 0.0,
     };
 
+    let mut last_mouse_position: Vec2 = mouse_position().into();
+    let mut yaw = 0.0;
+
+    set_cursor_grab(true);
+    show_mouse(false);
+
     loop {
+        let mouse_position: Vec2 = mouse_position().into();
+        let mouse_delta = mouse_position - last_mouse_position;
+
+        last_mouse_position = mouse_position;
+
+        yaw += mouse_delta.x * MOUSE_SENSITIVITY;
+        player.angle = yaw.rem_euclid(2.0 * PI);
+
         let mut delta = Vec2::ZERO;
+        let d = vec2(player.angle.cos(), player.angle.sin());
+
         if is_key_down(KeyCode::A) {
-            delta.x = -PLAYER_STEP;
-        } else if is_key_down(KeyCode::D) {
-            delta.x = PLAYER_STEP;
+            delta -= d.perp();
+        }
+        if is_key_down(KeyCode::D) {
+            delta += d.perp();
         }
 
         if is_key_down(KeyCode::W) {
-            delta.y = -PLAYER_STEP;
-        } else if is_key_down(KeyCode::S) {
-            delta.y = PLAYER_STEP;
+            delta += d;
+        }
+        if is_key_down(KeyCode::S) {
+            delta -= d;
         }
 
-        player.pos.x = (player.pos.x + delta.x).clamp(FIELD.x, FIELD.w);
-        player.pos.y = (player.pos.y + delta.y).clamp(FIELD.y, FIELD.h);
+        delta = delta.normalize_or_zero() * PLAYER_STEP;
 
-        let right_pressed = is_key_down(KeyCode::Right);
-        let left_pressed = is_key_down(KeyCode::Left);
-        let signum = if right_pressed {
-            1.0
-        } else if left_pressed {
-            -1.0
-        } else {
-            0.0
-        };
-        player.angle = (player.angle + ANGLE_STEP * signum).rem_euclid(2.0 * PI);
+        let new_pos = player.pos + delta;
+        if FIELD.contains(new_pos.with_x(player.pos.x))
+            && !map[(new_pos.y / TILE_SIZE) as usize][(player.pos.x / TILE_SIZE) as usize]
+        {
+            player.pos.y = new_pos.y;
+        }
 
-        // draw_circle(
-        //     player.pos.x as f32,
-        //     player.pos.y as f32,
-        //     PLAYER_RADIUS as f32,
-        //     WHITE,
-        // );
+        if FIELD.contains(new_pos.with_y(player.pos.y))
+            && !map[(player.pos.y / TILE_SIZE) as usize][(new_pos.x / TILE_SIZE) as usize]
+        {
+            player.pos.x = new_pos.x;
+        }
 
         let step = FOV / screen_width();
         for point in 0..screen_width() as usize {
@@ -282,23 +294,11 @@ async fn main() {
                 _ => unreachable!(),
             }
 
-            let hit;
-            let horizontal;
-            if player.pos.distance(ray_pos_v) < player.pos.distance(ray_pos_h) {
-                hit = ray_pos_v;
-                horizontal = false;
+            let hit = if player.pos.distance(ray_pos_v) < player.pos.distance(ray_pos_h) {
+                ray_pos_v
             } else {
-                hit = ray_pos_h;
-                horizontal = true;
+                ray_pos_h
             };
-            // draw_line(
-            //     player.pos.x as f32,
-            //     player.pos.y as f32,
-            //     hit.x as f32,
-            //     hit.y as f32,
-            //     2.0,
-            //     PURPLE,
-            // );
 
             let line_h = TILE_SIZE * screen_height() / (player.pos.distance(hit));
             draw_line(
@@ -307,7 +307,7 @@ async fn main() {
                 point as f32,
                 screen_height() / 2.0 - line_h / 2.0,
                 1.0,
-                if horizontal { DARKGREEN } else { GREEN },
+                Color::from_vec(LIGHTGRAY.to_vec() * (1.0 - player.pos.distance(hit) / VISIBILITY)),
             );
         }
 
