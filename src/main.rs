@@ -1,23 +1,11 @@
+mod consts;
+mod player;
+
 use ::rand::{Rng, SeedableRng, rngs::StdRng};
+use consts::*;
 use macroquad::prelude::*;
+use player::*;
 use std::f32::consts::PI;
-
-const ROWS: usize = 15;
-const COLUMNS: usize = 20;
-const TILE_SIZE: f32 = 64.0;
-
-const TILE_CHANCE: f32 = 0.1;
-const PLAYER_STEP: f32 = 5.0;
-const MOUSE_SENSITIVITY: f32 = 0.0008;
-const VISIBILITY: f32 = 1500.0;
-static FIELD: Rect = Rect::new(
-    0.0,
-    0.0,
-    COLUMNS as f32 * TILE_SIZE,
-    ROWS as f32 * TILE_SIZE,
-);
-
-const FOV: f32 = PI / 2.0;
 
 fn window_conf() -> Conf {
     Conf {
@@ -31,29 +19,19 @@ fn window_conf() -> Conf {
     }
 }
 
-struct Player {
-    pos: Vec2,
-    angle: f32,
-}
-
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut rng = StdRng::from_os_rng();
 
-    let mut map = [[false; COLUMNS]; ROWS];
+    let mut map = [[true; COLUMNS]; ROWS];
     for row in &mut map {
         for tile in row {
             *tile = rng.random_range(0.0..=1.0) <= TILE_CHANCE;
         }
     }
 
-    for _ in 0..8 {
-        set_fullscreen(true);
-        next_frame().await;
-    }
-
     let mut player = Player {
-        pos: vec2(FIELD.x, FIELD.y),
+        pos: vec2(50.0, 50.0),
         angle: 0.0,
     };
 
@@ -62,6 +40,8 @@ async fn main() {
 
     set_cursor_grab(true);
     show_mouse(false);
+
+    let texture = Texture2D::from_file_with_format(include_bytes!("../image.png"), None);
 
     loop {
         let mouse_position: Vec2 = mouse_position().into();
@@ -104,212 +84,7 @@ async fn main() {
             player.pos.x = new_pos.x;
         }
 
-        let step = FOV / screen_width();
-        for point in 0..screen_width() as usize {
-            let alpha =
-                2.0 * PI - (-FOV / 2.0 + player.angle + step * point as f32).rem_euclid(2.0 * PI);
-            let quadrant = match alpha {
-                angle if (0.0..PI / 2.0).contains(&angle) => 1,
-                angle if (PI / 2.0..PI).contains(&angle) => 2,
-                angle if (PI..3.0 / 2.0 * PI).contains(&angle) => 3,
-                angle if (3.0 / 2.0 * PI..=2.0 * PI).contains(&angle) => 4,
-                _ => continue,
-            };
-
-            let mut ray_pos_v = player.pos;
-            let mut ray_pos_h = player.pos;
-
-            match quadrant {
-                1 => {
-                    let path_left = vec2(
-                        ((player.pos.x / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.x,
-                        player.pos.y - ((player.pos.y / TILE_SIZE).floor()) as f32 * TILE_SIZE,
-                    );
-
-                    let b = -alpha.tan() * path_left.x;
-                    ray_pos_v += vec2(path_left.x + 1.0, b);
-
-                    loop {
-                        if !FIELD.contains(ray_pos_v)
-                            || map[(ray_pos_v.y / TILE_SIZE).floor() as usize]
-                                [(ray_pos_v.x / TILE_SIZE).floor() as usize]
-                        {
-                            break;
-                        }
-
-                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -alpha.tan());
-                    }
-
-                    let b = path_left.y / alpha.tan();
-                    ray_pos_h += vec2(b, -path_left.y - 1.0);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_h);
-                        if pos_beyond_field
-                            || map[((ray_pos_h.y) / TILE_SIZE).floor() as usize]
-                                [(ray_pos_h.x / TILE_SIZE).floor() as usize]
-                        {
-                            if pos_beyond_field {
-                                let extra_y = FIELD.y - ray_pos_h.y;
-                                let extra_x = extra_y / -alpha.tan();
-                                ray_pos_h += vec2(extra_x, extra_y);
-                            }
-
-                            break;
-                        }
-
-                        ray_pos_h += vec2(TILE_SIZE / alpha.tan(), -TILE_SIZE);
-                    }
-                }
-                2 => {
-                    let path_left = vec2(
-                        ((player.pos.x / TILE_SIZE).floor()) as f32 * TILE_SIZE - player.pos.x,
-                        player.pos.y - ((player.pos.y / TILE_SIZE).floor()) as f32 * TILE_SIZE,
-                    );
-
-                    let b = -alpha.tan() * path_left.x;
-                    ray_pos_v += vec2(path_left.x - 1.0, b);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_v);
-                        if pos_beyond_field
-                            || map[(ray_pos_v.y / TILE_SIZE).floor() as usize]
-                                [(ray_pos_v.x / TILE_SIZE).floor() as usize]
-                        {
-                            if pos_beyond_field {
-                                let extra_x = FIELD.x - ray_pos_v.x;
-                                let extra_y = extra_x * -alpha.tan();
-
-                                ray_pos_v += vec2(extra_x, extra_y);
-                            }
-                            break;
-                        }
-
-                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * alpha.tan());
-                    }
-
-                    let b = path_left.y / alpha.tan();
-                    ray_pos_h += vec2(b, -path_left.y - 1.0);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_h);
-                        if pos_beyond_field
-                            || map[((ray_pos_h.y) / TILE_SIZE).floor() as usize]
-                                [(ray_pos_h.x / TILE_SIZE).floor() as usize]
-                        {
-                            if pos_beyond_field {
-                                let extra_y = FIELD.y - ray_pos_h.y;
-                                let extra_x = extra_y / -alpha.tan();
-                                ray_pos_h += vec2(extra_x, extra_y);
-                            }
-                            break;
-                        }
-
-                        ray_pos_h += vec2(TILE_SIZE / alpha.tan(), -TILE_SIZE);
-                    }
-                }
-                3 => {
-                    let alpha = alpha - PI;
-                    let path_left = vec2(
-                        ((player.pos.x / TILE_SIZE).floor()) as f32 * TILE_SIZE - player.pos.x,
-                        ((player.pos.y / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.y,
-                    );
-
-                    let b = -alpha.tan() * path_left.x;
-                    ray_pos_v += vec2(path_left.x - 1.0, b);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_v);
-                        if pos_beyond_field
-                            || map[(ray_pos_v.y / TILE_SIZE).floor() as usize]
-                                [(ray_pos_v.x / TILE_SIZE).floor() as usize]
-                        {
-                            if pos_beyond_field {
-                                let extra_x = FIELD.x - ray_pos_v.x;
-                                let extra_y = extra_x * -alpha.tan();
-                                ray_pos_v += vec2(extra_x, extra_y);
-                            }
-
-                            break;
-                        }
-
-                        ray_pos_v += vec2(-TILE_SIZE, TILE_SIZE * alpha.tan());
-                    }
-
-                    let b = path_left.y / -alpha.tan();
-                    ray_pos_h += vec2(b, path_left.y);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_h);
-                        if pos_beyond_field
-                            || map[((ray_pos_h.y) / TILE_SIZE).floor() as usize]
-                                [(ray_pos_h.x / TILE_SIZE).floor() as usize]
-                        {
-                            if pos_beyond_field {
-                                let extra_y = ray_pos_h.y - FIELD.h;
-                                let extra_x = extra_y / alpha.tan();
-                                ray_pos_h += vec2(extra_x, -extra_y);
-                            }
-                            break;
-                        }
-
-                        ray_pos_h += vec2(TILE_SIZE / -alpha.tan(), TILE_SIZE);
-                    }
-                }
-                4 => {
-                    let path_left = vec2(
-                        ((player.pos.x / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.x,
-                        ((player.pos.y / TILE_SIZE).ceil()) as f32 * TILE_SIZE - player.pos.y,
-                    );
-
-                    let b = -alpha.tan() * path_left.x;
-                    ray_pos_v += vec2(path_left.x, b);
-
-                    loop {
-                        let pos_beyond_field = !FIELD.contains(ray_pos_v);
-                        if pos_beyond_field
-                            || map[(ray_pos_v.y / TILE_SIZE).floor() as usize]
-                                [(ray_pos_v.x / TILE_SIZE).floor() as usize]
-                        {
-                            break;
-                        }
-
-                        ray_pos_v += vec2(TILE_SIZE, TILE_SIZE * -alpha.tan());
-                    }
-
-                    let b = path_left.y / -alpha.tan();
-                    ray_pos_h += vec2(b, path_left.y);
-
-                    loop {
-                        if !FIELD.contains(ray_pos_h)
-                            || map[((ray_pos_h.y) / TILE_SIZE).floor() as usize]
-                                [(ray_pos_h.x / TILE_SIZE).floor() as usize]
-                        {
-                            break;
-                        }
-
-                        ray_pos_h += vec2(TILE_SIZE / -alpha.tan(), TILE_SIZE);
-                    }
-                }
-                _ => unreachable!(),
-            }
-
-            let hit = if player.pos.distance(ray_pos_v) < player.pos.distance(ray_pos_h) {
-                ray_pos_v
-            } else {
-                ray_pos_h
-            };
-
-            let line_h = TILE_SIZE * screen_height() / (player.pos.distance(hit));
-            draw_line(
-                point as f32,
-                screen_height() / 2.0 + line_h / 2.0,
-                point as f32,
-                screen_height() / 2.0 - line_h / 2.0,
-                1.0,
-                Color::from_vec(LIGHTGRAY.to_vec() * (1.0 - player.pos.distance(hit) / VISIBILITY)),
-            );
-        }
+        player.cast(&texture, &map);
 
         // draw_line(
         //     player.pos.x,
